@@ -234,7 +234,7 @@
       1. PC에서 이 파일을 열고 방 코드를 정합니다.<br>
       2. 폰에서도 같은 파일을 열고 <b>같은 코드</b>를 입력합니다.<br>
       3. 인터넷만 있으면 같은 Wi-Fi가 아니어도 대화할 수 있어요.<br>
-      <span style="color:#6f81a0">폰으로 옮길 때는 카카오톡 '나에게 보내기'나 이메일이 편해요.</span>
+      <span id="transferHint" style="color:#6f81a0">폰으로 옮길 때는 카카오톡 '나에게 보내기'나 이메일이 편해요.</span>
     </p>
 
     <p class="warn">공개 중계 서버를 사용하는 간단 도구입니다. 비밀번호·개인정보 같은 민감한 내용은 보내지 마세요.</p>
@@ -264,10 +264,15 @@
     messages: $('messages'), setup: $('setup'), composer: $('composer'),
     nameInput: $('nameInput'), roomInput: $('roomInput'),
     randomBtn: $('randomBtn'), joinBtn: $('joinBtn'), setupError: $('setupError'),
-    input: $('input'), leaveBtn: $('leaveBtn'),
+    input: $('input'), leaveBtn: $('leaveBtn'), transferHint: $('transferHint'),
   };
 
   const BASE_TITLE = 'PC ↔ 폰 채팅';
+  const HOSTED = /^https?:$/.test(location.protocol);
+
+  function shareLink() {
+    return location.origin + location.pathname + '#room=' + room;
+  }
   const BROKERS = [
     'wss://broker.hivemq.com:8884/mqtt',
     'wss://broker.emqx.io:8084/mqtt',
@@ -730,8 +735,15 @@
     if (event.key === 'Enter') { event.preventDefault(); join(); }
   });
 
-  el.copyRoom.addEventListener('click', () => copyText(room, el.copyRoom));
+  el.copyRoom.addEventListener('click', () => {
+    copyText(HOSTED ? shareLink() : room, el.copyRoom);
+  });
   el.leaveBtn.addEventListener('click', leave);
+
+  if (HOSTED) {
+    el.copyRoom.textContent = '링크 복사';
+    el.transferHint.textContent = "폰에서는 '링크 복사'로 주소를 보내면 바로 열려요. (방 코드도 같이 들어갑니다)";
+  }
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
