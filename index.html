@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1120">
+<title>PC ↔ 폰 채팅</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; }
+  :root { color-scheme: dark; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo",
+                 "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
+    background: #0b1120;
+    color: #e6edf9;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+  body::before {
+    content: "";
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(60% 40% at 50% -10%, rgba(59,130,246,.30), transparent 70%),
+      radial-gradient(45% 35% at 100% 110%, rgba(139,92,246,.20), transparent 70%);
+  }
+  [hidden] { display: none !important; }
+
+  .app {
+    position: relative; z-index: 1;
+    display: flex; flex-direction: column;
+    height: 100vh; height: 100dvh;
+    max-width: 760px; margin: 0 auto;
+  }
+
+  /* ── 상단 바 ── */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    border-bottom: 1px solid rgba(148,163,184,.14);
+    background: rgba(11,17,32,.72);
+    backdrop-filter: blur(12px);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .logo { font-size: 22px; line-height: 1; }
+  .brand h1 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+  .status { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 11.5px; color: #93a4c3; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #64748b; flex: none; }
+  .dot.on { background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.18); }
+  .dot.err { background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.16); }
+  .dot.connecting { background: #f59e0b; animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: .35; } 50% { opacity: 1; } }
+
+  button { font: inherit; cursor: pointer; touch-action: manipulation; }
+  .ghost {
+    border: 1px solid rgba(148,163,184,.26);
+    background: rgba(148,163,184,.08);
+    color: #dbe6fb;
+    border-radius: 10px; padding: 7px 12px; font-size: 13px;
+    transition: background .15s, border-color .15s;
+  }
+  .ghost:hover { background: rgba(148,163,184,.16); }
+  .ghost.small { padding: 5px 9px; font-size: 12px; border-radius: 8px; }
+  .primary {
+    border: 0; color: #fff; border-radius: 12px; padding: 12px 18px;
+    font-size: 15px; font-weight: 700;
+    background: linear-gradient(180deg, #3b82f6, #2563eb);
+    box-shadow: 0 6px 18px rgba(37,99,235,.32);
+  }
+  .primary:active { transform: translateY(1px); }
+
+  /* ── 방 정보 바 ── */
+  .roombar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 16px;
+    font-size: 12.5px; color: #9fb0cd;
+    border-bottom: 1px solid rgba(148,163,184,.10);
+    background: rgba(148,163,184,.04);
+  }
+  .roombar strong {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: .14em; font-size: 14px; color: #dbeafe;
+  }
+  .roombar .spacer { flex: 1; }
+
+  /* ── 메시지 ── */
+  .messages {
+    flex: 1; min-height: 0; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 18px 16px 10px;
+    scrollbar-width: thin;
+  }
+  .empty {
+    margin: auto; text-align: center; color: #7f90ae; font-size: 13.5px; line-height: 1.7;
+  }
+  .empty .big { font-size: 34px; display: block; margin-bottom: 8px; }
+
+  .msg { display: flex; flex-direction: column; gap: 3px; max-width: 84%; animation: pop .16s ease-out; }
+  @keyframes pop { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .msg.self { align-self: flex-end; align-items: flex-end; }
+  .msg.other { align-self: flex-start; align-items: flex-start; }
+  .who { font-size: 11px; color: #8b9bb8; padding: 0 5px; }
+  .bubble {
+    padding: 9px 13px; border-radius: 16px;
+    font-size: 15px; line-height: 1.45;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .self .bubble {
+    background: linear-gradient(180deg, #3b82f6, #2563eb);
+    color: #fff; border-bottom-right-radius: 5px;
+    box-shadow: 0 4px 14px rgba(37,99,235,.24);
+  }
+  .other .bubble {
+    background: #18223a; border: 1px solid #26365a;
+    border-bottom-left-radius: 5px;
+  }
+  .sys {
+    align-self: center; max-width: 92%; text-align: center;
+    font-size: 12px; color: #8b9bb8;
+    background: rgba(148,163,184,.08);
+    padding: 4px 11px; border-radius: 999px;
+  }
+
+  /* ── 입력창 ── */
+  .composer {
+    display: flex; align-items: flex-end; gap: 8px;
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+    border-top: 1px solid rgba(148,163,184,.14);
+    background: rgba(11,17,32,.82);
+    backdrop-filter: blur(12px);
+  }
+  #input {
+    flex: 1; resize: none; max-height: 132px;
+    padding: 11px 14px;
+    border-radius: 20px;
+    border: 1px solid #26365a;
+    background: #131d33;
+    color: #e6edf9;
+    font: inherit; font-size: 16px; line-height: 1.4;
+    outline: none;
+  }
+  #input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.16); }
+  #input::placeholder { color: #6b7c99; }
+  .send {
+    flex: none; width: 44px; height: 44px; border: 0; border-radius: 50%;
+    display: grid; place-items: center;
+    background: linear-gradient(180deg, #3b82f6, #2563eb); color: #fff;
+    box-shadow: 0 4px 14px rgba(37,99,235,.35);
+  }
+  .send:active { transform: translateY(1px); }
+  .send svg { width: 20px; height: 20px; }
+
+  /* ── 시작 화면 ── */
+  .setup {
+    flex: 1; display: flex; flex-direction: column; justify-content: center;
+    gap: 14px; padding: 24px 22px calc(24px + env(safe-area-inset-bottom));
+    overflow-y: auto;
+  }
+  .setup h2 { margin: 0 0 6px; font-size: 18px; line-height: 1.4; }
+  .setup .sub { margin: 0 0 6px; color: #93a4c3; font-size: 13.5px; line-height: 1.6; }
+  .field { display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; color: #9fb0cd; font-weight: 600; }
+  .field input {
+    padding: 13px 14px; border-radius: 12px;
+    border: 1px solid #26365a; background: #131d33; color: #e6edf9;
+    font: inherit; font-size: 16px; font-weight: 500; outline: none;
+  }
+  .field input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.16); }
+  #roomInput { letter-spacing: .12em; text-transform: uppercase; }
+  .row { display: flex; gap: 8px; }
+  .row .primary { flex: 1; }
+  .hint { margin: 4px 0 0; font-size: 12.5px; line-height: 1.7; color: #8496b4; }
+  .hint b { color: #c9d8f2; }
+  .warn {
+    margin: 0; font-size: 11.5px; line-height: 1.6; color: #a58a5b;
+    background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.18);
+    border-radius: 10px; padding: 9px 11px;
+  }
+  .error {
+    margin: 0; font-size: 12.5px; line-height: 1.6; color: #fca5a5;
+    background: rgba(239,68,68,.10); border: 1px solid rgba(239,68,68,.24);
+    border-radius: 10px; padding: 9px 11px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">💬</span>
+      <div>
+        <h1>PC ↔ 폰 채팅</h1>
+        <div class="status"><span id="dot" class="dot"></span><span id="statusText">대기 중</span></div>
+      </div>
+    </div>
+    <button id="leaveBtn" class="ghost" hidden>나가기</button>
+  </header>
+
+  <div class="roombar" id="roombar" hidden>
+    <span>방 코드</span>
+    <strong id="roomLabel">—</strong>
+    <button id="copyRoom" class="ghost small" type="button">복사</button>
+    <span class="spacer"></span>
+    <span id="peerCount">1명</span>
+  </div>
+
+  <main id="messages" class="messages" hidden></main>
+
+  <section id="setup" class="setup">
+    <div>
+      <h2>같은 방 코드만 입력하면 바로 연결돼요</h2>
+      <p class="sub">설치도, 서버도 필요 없습니다. 이 파일을 PC와 폰에서 각각 열기만 하면 됩니다.</p>
+    </div>
+
+    <label class="field">내 이름
+      <input id="nameInput" maxlength="12" placeholder="예: 상훈" autocomplete="nickname">
+    </label>
+
+    <label class="field">방 코드
+      <input id="roomInput" maxlength="12" placeholder="예: K7F2QX"
+             autocapitalize="characters" autocorrect="off" spellcheck="false" autocomplete="off">
+    </label>
+
+    <div class="row">
+      <button id="randomBtn" class="ghost" type="button">랜덤 코드</button>
+      <button id="joinBtn" class="primary" type="button">입장</button>
+    </div>
+
+    <p id="setupError" class="error" hidden></p>
+
+    <p class="hint">
+      1. PC에서 이 파일을 열고 방 코드를 정합니다.<br>
+      2. 폰에서도 같은 파일을 열고 <b>같은 코드</b>를 입력합니다.<br>
+      3. 인터넷만 있으면 같은 Wi-Fi가 아니어도 대화할 수 있어요.<br>
+      <span style="color:#6f81a0">폰으로 옮길 때는 카카오톡 '나에게 보내기'나 이메일이 편해요.</span>
+    </p>
+
+    <p class="warn">공개 중계 서버를 사용하는 간단 도구입니다. 비밀번호·개인정보 같은 민감한 내용은 보내지 마세요.</p>
+  </section>
+
+  <form id="composer" class="composer" hidden>
+    <textarea id="input" rows="1" maxlength="4000" placeholder="메시지를 입력하세요…"
+              enterkeyhint="send" autocomplete="off"></textarea>
+    <button class="send" type="submit" aria-label="보내기">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 2 11 13"></path><path d="M22 2 15 22l-4-9-9-4 20-7Z"></path>
+      </svg>
+    </button>
+  </form>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5/dist/mqtt.min.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+  const el = {
+    dot: $('dot'), statusText: $('statusText'),
+    roombar: $('roombar'), roomLabel: $('roomLabel'), copyRoom: $('copyRoom'), peerCount: $('peerCount'),
+    messages: $('messages'), setup: $('setup'), composer: $('composer'),
+    nameInput: $('nameInput'), roomInput: $('roomInput'),
+    randomBtn: $('randomBtn'), joinBtn: $('joinBtn'), setupError: $('setupError'),
+    input: $('input'), leaveBtn: $('leaveBtn'),
+  };
+
+  const BASE_TITLE = 'PC ↔ 폰 채팅';
+  const BROKERS = [
+    'wss://broker.hivemq.com:8884/mqtt',
+    'wss://broker.emqx.io:8084/mqtt',
+  ];
+  const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
+  };
+
+  // 탭(기기)마다 고유한 id: 같은 브라우저에서 두 탭을 열어도 서로 다른 사람으로 인식됩니다.
+  const tabStore = {
+    get(k) { try { return sessionStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { sessionStorage.setItem(k, v); } catch { /* ignore */ } },
+  };
+
+  const clientId = (() => {
+    let id = tabStore.get('pcphone.cid');
+    if (!id) {
+      id = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      tabStore.set('pcphone.cid', id);
+    }
+    return id;
+  })();
+
+  const isPhone = /Android|iPhone|iPad|iPod|Mobile|SM-|Pixel/i.test(navigator.userAgent);
+  let myName = store.get('pcphone.name') || (isPhone ? '폰' : 'PC');
+  let room = '';
+  let topic = '';
+  let clients = [];
+  let everOnline = false;
+  let connectToken = 0;
+  let renderedIds = new Set();
+  let seenPeers = new Set();
+  /** @type {Map<string, {name: string, lastSeen: number}>} */
+  let peers = new Map();
+  let lastRender = { cid: null, at: 0 };
+  let unread = 0;
+  let joinedAt = 0;
+  let lastHereSent = 0;
+  let joining = false;
+
+  /* ───────── 공통 UI ───────── */
+
+  function setStatus(kind, text) {
+    el.dot.className = 'dot' + (kind ? ' ' + kind : '');
+    el.statusText.textContent = text;
+  }
+
+  function showError(message) {
+    el.setupError.textContent = message;
+    el.setupError.hidden = !message;
+  }
+
+  function randomCode(len = 6) {
+    const bytes = new Uint32Array(len);
+    crypto.getRandomValues(bytes);
+    let out = '';
+    for (let i = 0; i < len; i++) out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
+    return out;
+  }
+
+  function normalizeRoom(value) {
+    return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+  }
+
+  async function copyText(text, button) {
+    const original = button.textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const helper = document.createElement('textarea');
+      helper.value = text;
+      helper.style.position = 'fixed';
+      helper.style.opacity = '0';
+      document.body.appendChild(helper);
+      helper.select();
+      try { document.execCommand('copy'); } catch { /* ignore */ }
+      helper.remove();
+    }
+    button.textContent = '복사됨';
+    setTimeout(() => { button.textContent = original; }, 1200);
+  }
+
+  function timeLabel(ts) {
+    return new Date(ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function nearBottom() {
+    const box = el.messages;
+    return box.scrollHeight - box.scrollTop - box.clientHeight < 90;
+  }
+
+  function scrollToBottom(force) {
+    if (!force && !nearBottom()) return;
+    requestAnimationFrame(() => { el.messages.scrollTop = el.messages.scrollHeight; });
+  }
+
+  function renderEmpty() {
+    if (el.messages.querySelector('.msg, .sys')) return;
+    el.messages.innerHTML =
+      '<div class="empty"><span class="big">💬</span>아직 메시지가 없어요.<br>첫 메시지를 보내보세요!</div>';
+  }
+
+  function removeEmpty() {
+    const empty = el.messages.querySelector('.empty');
+    if (empty) empty.remove();
+  }
+
+  function renderPeers() {
+    const now = Date.now();
+    for (const [cid, peer] of peers) {
+      if (now - peer.lastSeen > 80000) {
+        peers.delete(cid);
+        seenPeers.delete(cid);
+      }
+    }
+    el.peerCount.textContent = (1 + peers.size) + '명';
+  }
+
+  function renderMessage(msg) {
+    if (!msg || !msg.text) return;
+    if (msg.id && renderedIds.has(msg.id)) return;
+    if (msg.id) renderedIds.add(msg.id);
+
+    const stick = nearBottom();
+    removeEmpty();
+
+    const self = msg.cid === clientId;
+    const grouped = lastRender.cid === msg.cid && Math.abs(msg.ts - lastRender.at) < 120000;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'msg ' + (self ? 'self' : 'other');
+
+    const who = document.createElement('div');
+    who.className = 'who';
+    who.textContent = self ? timeLabel(msg.ts) : (msg.name || '익명') + ' · ' + timeLabel(msg.ts);
+    if (grouped) who.style.visibility = 'hidden';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = msg.text;
+
+    wrap.append(who, bubble);
+    el.messages.appendChild(wrap);
+    lastRender = { cid: msg.cid, at: msg.ts };
+
+    scrollToBottom(stick);
+    if (!self) {
+      bumpUnread();
+      try { if (!document.hidden && navigator.vibrate) navigator.vibrate(12); } catch { /* ignore */ }
+    }
+  }
+
+  function renderSystem(text) {
+    removeEmpty();
+    const stick = nearBottom();
+    const node = document.createElement('div');
+    node.className = 'sys';
+    node.textContent = text;
+    el.messages.appendChild(node);
+    scrollToBottom(stick);
+  }
+
+  function bumpUnread() {
+    if (!document.hidden) return;
+    unread += 1;
+    document.title = '(' + unread + ') 새 메시지';
+  }
+
+  /* ───────── 메시징 ───────── */
+
+  function publish(payload) {
+    const data = JSON.stringify(payload);
+    let sent = false;
+    for (const c of clients) {
+      if (!c.connected) continue;
+      try {
+        c.publish(topic, data, { qos: 1 });
+        sent = true;
+      } catch { /* ignore */ }
+    }
+    return sent;
+  }
+
+  function isOnline() {
+    return clients.some((c) => c.connected);
+  }
+
+  function newMessageId() {
+    return clientId + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+  }
+
+  function sendMessage(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const msg = {
+      t: 'msg', id: newMessageId(), cid: clientId,
+      name: myName, text: trimmed.slice(0, 4000), ts: Date.now(),
+    };
+    if (!publish(msg)) {
+      renderSystem('연결이 끊겨 메시지를 보내지 못했어요. 잠시 후 다시 시도해 주세요.');
+      return;
+    }
+    renderMessage(msg);
+    scrollToBottom(true);
+  }
+
+  function handleIncoming(raw, fromTopic) {
+    if (fromTopic !== topic) return;
+    let data;
+    try { data = JSON.parse(raw); } catch { return; }
+    if (!data || typeof data !== 'object') return;
+
+    if (data.t === 'msg') {
+      if (typeof data.text !== 'string' || !data.text.trim()) return;
+      if (data.cid !== clientId) {
+        seenPeers.add(data.cid);
+        peers.set(data.cid, { name: data.name || '익명', lastSeen: Date.now() });
+        renderPeers();
+      }
+      renderMessage({
+        id: data.id, cid: data.cid, name: data.name,
+        text: data.text.slice(0, 4000), ts: Number(data.ts) || Date.now(),
+      });
+      return;
+    }
+
+    if (data.t === 'join' && data.cid !== clientId) {
+      const isNew = !seenPeers.has(data.cid);
+      seenPeers.add(data.cid);
+      peers.set(data.cid, { name: data.name || '익명', lastSeen: Date.now() });
+      renderPeers();
+      if (isNew && Date.now() - joinedAt > 800) {
+        renderSystem((data.name || '누군가') + ' 님이 입장했습니다');
+      }
+      if (Date.now() - lastHereSent > 1000) {
+        lastHereSent = Date.now();
+        publish({ t: 'here', cid: clientId, name: myName });
+      }
+      return;
+    }
+
+    if (data.t === 'here' && data.cid !== clientId) {      const isNew = !seenPeers.has(data.cid);
+      seenPeers.add(data.cid);
+      peers.set(data.cid, { name: data.name || '익명', lastSeen: Date.now() });
+      renderPeers();
+      if (isNew && Date.now() - joinedAt > 800) {
+        renderSystem((data.name || '누군가') + ' 님이 접속 중입니다');
+      }
+      return;
+    }
+
+    if (data.t === 'bye' && data.cid !== clientId) {
+      if (peers.has(data.cid) || seenPeers.has(data.cid)) {
+        renderSystem((data.name || '누군가') + ' 님이 나갔습니다');
+      }
+      peers.delete(data.cid);
+      seenPeers.delete(data.cid);
+      renderPeers();
+    }
+  }
+
+  /* ───────── 연결 ───────── */
+
+  async function ensureMqtt() {
+    if (typeof window.mqtt !== 'undefined') return true;
+    await new Promise((resolve) => {
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/mqtt@5/dist/mqtt.min.js';
+      script.onload = resolve;
+      script.onerror = resolve;
+      document.head.appendChild(script);
+    });
+    return typeof window.mqtt !== 'undefined';
+  }
+
+  function updateStatus() {
+    const online = clients.filter((c) => c.connected).length;
+    if (online > 0) {
+      everOnline = true;
+      setStatus('on', '연결됨 · ' + room);
+    } else {
+      setStatus('connecting', everOnline ? '재연결 중…' : '연결 중…');
+    }
+  }
+
+  // 두 중계 서버에 동시에 붙입니다.
+  // 한쪽이 막혀 있어도 다른 쪽으로 대화가 이어지고, PC/폰이 서로 다른 서버에 붙어서
+  // 메시지가 안 오가는 문제도 생기지 않습니다. (같은 메시지는 id 로 중복 제거)
+  function connectAll(token) {
+    everOnline = false;
+    setStatus('connecting', '연결 중…');
+
+    for (const url of BROKERS) {
+      const c = window.mqtt.connect(url, {
+        clientId: 'pcp_' + Math.random().toString(16).slice(2, 12),
+        clean: true,
+        protocolVersion: 4,
+        connectTimeout: 8000,
+        reconnectPeriod: 2500,
+        keepalive: 30,
+      });
+      clients.push(c);
+
+      c.on('connect', () => {
+        if (token !== connectToken) {
+          try { c.end(true); } catch { /* ignore */ }
+          return;
+        }
+        updateStatus();
+        c.subscribe(topic, { qos: 1 }, (err) => {
+          if (err || token !== connectToken) return;
+          publish({ t: 'join', cid: clientId, name: myName });
+        });
+      });
+
+      c.on('message', (incomingTopic, payload) => {
+        handleIncoming(payload.toString(), incomingTopic);
+      });
+
+      c.on('close', () => { if (token === connectToken) updateStatus(); });
+      c.on('offline', () => { if (token === connectToken) updateStatus(); });
+      c.on('reconnect', () => { if (token === connectToken) updateStatus(); });
+      c.on('error', () => { /* mqtt.js 가 알아서 재연결합니다 */ });
+    }
+
+    setTimeout(() => { if (token === connectToken) updateStatus(); }, 9000);
+    setTimeout(() => {
+      if (token === connectToken && !everOnline) setStatus('err', '연결 재시도 중…');
+    }, 13000);
+  }
+
+  async function join() {
+    if (joining) return;
+    const wantedRoom = normalizeRoom(el.roomInput.value);
+    const wantedName = el.nameInput.value.trim().slice(0, 12);
+
+    if (!wantedName) return showError('이름을 입력해 주세요.');
+    if (wantedRoom.length < 3) return showError('방 코드를 3자 이상 입력해 주세요.');
+    showError('');
+
+    joining = true;
+    el.joinBtn.disabled = true;
+    el.joinBtn.textContent = '연결 중…';
+
+    const ok = await ensureMqtt();
+    if (!ok) {
+      joining = false;
+      el.joinBtn.disabled = false;
+      el.joinBtn.textContent = '입장';
+      return showError('인터넷에서 채팅 라이브러리를 불러오지 못했습니다. 연결을 확인해 주세요.');
+    }
+
+    myName = wantedName;
+    room = wantedRoom;
+    topic = 'pcphone/v1/' + room;
+    store.set('pcphone.name', myName);
+    store.set('pcphone.room', room);
+
+    el.roomLabel.textContent = room;
+    el.setup.hidden = true;
+    el.messages.hidden = false;
+    el.composer.hidden = false;
+    el.roombar.hidden = false;
+    el.leaveBtn.hidden = false;
+
+    el.messages.innerHTML = '';
+    renderedIds = new Set();
+    peers = new Map();
+    seenPeers = new Set();
+    lastRender = { cid: null, at: 0 };
+    joinedAt = Date.now();
+    renderPeers();
+    renderEmpty();
+    scrollToBottom(true);
+
+    el.input.value = '';
+    autosize();
+    setTimeout(() => el.input.focus(), 50);
+
+    try { history.replaceState(null, '', '#room=' + room); } catch { /* ignore */ }
+
+    connectToken += 1;
+    connectAll(connectToken);
+
+    joining = false;
+    el.joinBtn.disabled = false;
+    el.joinBtn.textContent = '입장';
+  }
+
+  function leave() {
+    publish({ t: 'bye', cid: clientId, name: myName });
+    connectToken += 1;
+    const old = clients;
+    clients = [];
+    setTimeout(() => {
+      for (const c of old) {
+        try { c.end(true); } catch { /* ignore */ }
+      }
+    }, 150);
+    el.messages.hidden = true;
+    el.composer.hidden = true;
+    el.roombar.hidden = true;
+    el.leaveBtn.hidden = true;
+    el.setup.hidden = false;
+    setStatus('', '대기 중');
+    document.title = BASE_TITLE;
+    unread = 0;
+    try { history.replaceState(null, '', location.pathname + location.search); } catch { /* ignore */ }
+  }
+
+  /* ───────── 입력 ───────── */
+
+  function autosize() {
+    el.input.style.height = 'auto';
+    el.input.style.height = Math.min(el.input.scrollHeight, 132) + 'px';
+  }
+
+  el.input.addEventListener('input', autosize);
+
+  el.input.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.shiftKey) return;
+    if (event.isComposing || event.keyCode === 229) return; // 한글 조합 중
+    event.preventDefault();
+    sendMessage(el.input.value);
+    el.input.value = '';
+    autosize();
+  });
+
+  el.composer.addEventListener('submit', (event) => {
+    event.preventDefault();
+    sendMessage(el.input.value);
+    el.input.value = '';
+    autosize();
+    el.input.focus();
+  });
+
+  /* ───────── 초기화 ───────── */
+
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
+  const initialRoom = normalizeRoom(hash.get('room') || store.get('pcphone.room') || '');
+  el.roomInput.value = initialRoom || randomCode();
+  el.nameInput.value = myName;
+
+  el.randomBtn.addEventListener('click', () => {
+    el.roomInput.value = randomCode();
+    showError('');
+  });
+
+  el.joinBtn.addEventListener('click', join);
+  el.roomInput.addEventListener('input', () => {
+    el.roomInput.value = normalizeRoom(el.roomInput.value);
+  });
+  el.nameInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); join(); }
+  });
+  el.roomInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); join(); }
+  });
+
+  el.copyRoom.addEventListener('click', () => copyText(room, el.copyRoom));
+  el.leaveBtn.addEventListener('click', leave);
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    unread = 0;
+    document.title = BASE_TITLE;
+    if (isOnline()) scrollToBottom(true);
+  });
+
+  window.addEventListener('pagehide', () => {
+    if (isOnline()) publish({ t: 'bye', cid: clientId, name: myName });
+  });
+
+  // 접속 인원 유지: 20초마다 heartbeat, 80초 응답 없으면 목록에서 제거
+  setInterval(() => {
+    if (!isOnline()) return;
+    publish({ t: 'here', cid: clientId, name: myName });
+    renderPeers();
+  }, 20000);
+})();
+</script>
+</body>
+</html>
